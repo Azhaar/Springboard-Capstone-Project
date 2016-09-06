@@ -1,0 +1,314 @@
+---
+title: 'Predict Probability of Sales on Inbound Call Center Traffic'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Project description
+
+This project aims at predicting the sale on next call based on caller's demographic, socio economic data, location and the source of traffic (paid, SEO or affiliate). A sale comprises sale of any combination of cable, internet or phone service to a residential caller in any part of US depending on the availability of service at the caller's address. Call center sales agents have access to order entry tool for almost all the major cable, internet and phone service providers in the country which enables them to sell any provider the caller is looking for. 
+
+Ordering cable, internet and phone services is a complex process that requires customization and selection of many features on callers part and also because the price a customer pays on a monthly basis, varies with the choice of channels selection for a cable product, speed of internet package and in case of phone whether in-state or out-of-state calling is selected or not. People usually need assistance in order to order services and hence call in. 
+
+Before calling, callers generally search online to get an idea of what they should order and who to reach out to in order to get services. The search is mostly carried out on some of the popular search engines such as google, bing, yahoo etc. This particular call center markets its services on these search engines to generate demand and to drive calls to the center. 
+
+Data Source: In order to predict the sales outcome on a call, calls data for May 2016 has been used. Over 440K calls were offered in the call center in May of which about 400K calls got answered. The data is contained in an excel sheet. A summary of variables is obtained by running the summary() command on the read data. 
+
+
+
+```{r load packages and data}
+library(ggplot2)
+library(dplyr)
+
+# Set locale
+Sys.setlocale(locale="C")
+
+calls.may <- read.csv("CallsDataMay2016.csv", header = TRUE, stringsAsFactors = FALSE)
+calls.may<-calls.may[calls.may$Outcome=="CONNECT",]
+summary(calls.may)
+
+```
+
+A brief description of the variables in the data set is as follows:
+
+1. Call.Date : Captures the day of month when the call arrived. The dataset has calls answered for all 31 days in May.  
+2. CallStartTime: Time when call started
+3. CallEndTime: Time when call ended
+4. Outcome: This captures whether a call got successfully connected to an agent or not. For this analysis, all connected calls have been taken. This variable does not have any preditive capability and will be dropped.
+5. AgentID: Every agent in the center is assigned a unique ID captured by AgentID field.
+6. TFN : The toll free name dialled by the customer to reach us to order services
+7. BTN : Phone number of the customer
+8. CallSkill : Agents are divided into various skill in the call center. A skill comprises a group of agents who are expert in selling a particular group of services. Some agents are multiskilled. CallSkill is the skill of the agent who answered the call.
+9. OrigianlSkill: In case all agents on a skill are busy, the call is answered by the next available agent on another skill. The agent who was originally supposed to answer the call is captured by OriginalSkill variable. 
+10. CableCompany: THere are 24 skills in the center. 
+11. Affiliate: In addition to generating demand by marketing on search engines, some third party parnters also send traffic to the call center. They use a mix of marketing channels to drive traffic. The name of an affiliate is captured by this variable. The call center's own sources of traffic are grouped under "Digital Globe Services" to differentiate from the rest.
+12. Disposition: At the end of a call the call center agent classifies a call as sales/non-sales calls captured by the disposition variable. To better understand what happened on a call, disposition field helps capture the caller intent. A sale could be a sale of one service (A single play sale), two services (a double play sale), three services (a triple play sale), or four services (a quad play). The revenue generated on a call depends on the number of services sold. 
+
+## Data Cleaning
+
+The disposition of the call depends on a number of factors such as the area the caller was calling from, the affiliate that drove the call, call skill and the TFN. A more detailed explanation of each varilable and cleaning the data is presented below. 
+1. TFN 
+
+```{r No of unique TFNs}
+# Number of unique TFNs
+length(unique(calls.may$TFN))
+
+```
+There are 5,414 unique TFNs in the data set. The number of calls offered on each TFN ranges from 1 call answered to a maximum of 9,991 calls answered. The median number of calls answered is 6 while mean is 75.6 which suggests that some TFNs get a large number of calls while others obtain a few. Disecting this variable a little more shows that 77 out of the 5,414 TFNs have 1000 or more calls.  
+
+
+2. BTN : The BTN field should ideally have customer phone number and be 10 digits long. However, there are many BTNs which have more than 10 digits. There is a leading 1 in most of these TFNs which need to be removed. Also, some BTNs have more than 1 call answered which shows that these are numbers some of the affiliates using to send traffic. These BTNs need to be removed. After removing the calls with 2 or more BTNs, we are left with roughly 325,000 calls.
+
+```{r BTNs Analysis}
+# BTNs with multiple calls and more than 10 digits need to be removed
+BTNs<-calls.may%>%group_by(BTN)%>%summarise(Count=n())%>%mutate(BTN.Len=nchar(BTN))
+
+calls.may<-calls.may[!duplicated(calls.may[,7]),]
+calls.may$BTN.len <- nchar(calls.may$BTN)
+
+calls.may$BTN<-as.character(calls.may$BTN)
+calls.may$BTN <- ifelse(calls.may$BTN.len>10,substr(calls.may$BTN, nchar(calls.may$BTN)-9,nchar(calls.may$BTN)),calls.may$BTN)
+
+calls.may <- calls.may[which(calls.may$BTN.len>9),]
+calls.may <- calls.may[which(calls.may$BTN!="Anonymous"),]
+calls.may <- calls.may[which(calls.may$BTN!="Unavailable"),]
+calls.may <- calls.may[which(calls.may$BTN!="navailable"),]
+calls.may <- calls.may[-which(grepl("^855|^0|^1",calls.may$BTN)),]
+calls.may <- calls.may[-which(grepl("Res",calls.may$BTN)),]
+calls.may <- calls.may[-which(grepl("\\.",calls.may$BTN)),]
+
+# create a new column to extract area code from BTN
+calls.may$AreaCode <- substr(calls.may$BTN, 1,3)
+
+#remove BTN.len column
+calls.may <- calls.may[,-13]
+
+#No of calls left after removing duplicate BTN calls
+
+nrow(calls.may)
+
+head(calls.may,1)
+
+
+```
+ 
+The AgentID field shows that there are 689 agents who answered the phones in May. Median number of calls answered was 690. 
+
+```{r AgentID Analysis}
+#get calls answered by agent
+callsbyagent <- calls.may%>%group_by(AgentID)%>%summarise(CallsAns=n())
+
+
+#summary of calls by AgentID
+summary(callsbyagent)
+
+#plot of calls answered by AgentID
+
+ggplot(callsbyagent, aes(x=CallsAns)) + geom_histogram()
+```
+
+The CableCompany field shows 345 cable companies. However, there are many comapnies which have fewer than 10 calls in the whole month. A distribution of the calls answered by CableCompany is shown below. Some Cable Company names need to be cleaned such as converting lower to upper case etc. After cleaning up, the number of Cable Company reduces to 323. 
+
+```{r CableCompany field}
+#No of unique CableCompany 
+length(unique(calls.may$CableCompany))
+
+#count of calls answered by Cable Company
+CableCompany <- calls.may%>%group_by(CableCompany)%>%summarise(CallsAns=n())
+
+#distribution of calls answered
+ggplot(CableCompany, aes(x=CallsAns)) + geom_histogram()
+
+#summary of call answered by cable company
+summary(CableCompany$CallsAns)
+
+# fix Cable Company names
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="COMCAST","Comcast",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="COX","Cox",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="CHARTER","Charter",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="Charter ","Charter",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="TIME WARNER","Time Warner",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="AtlanticBroadBand","Atlantic Broadband",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="CABLE ONE","Cable One",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="CableONE","Cable One",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="CYH - Charter","CYH-Charter",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="CYH - Comcast","CYH-Comcast",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="CYH - COMCAST","CYH-Comcast",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="CYH-TWC","CYH-Time Warner",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="CYH - TWC","CYH-Time Warner",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="CYH - Time Warner","CYH-Time Warner",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="EarthLink","Earthlink",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="DIRECT TV","DirecTV",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="FRONTIER","Frontier",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="GODISH","GoDish",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="GoDish.com, Ltd.LLP","GoDish",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="HUGHESNET","HughesNet",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="MEDIACOM","Mediacom",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="Metro25","Metro 25",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="MOVERSNATION","Moversnation",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="NEW FAST INTERNET","New Fast Internet",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="OPTIMUM","Optimum",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="SATCNTRY","Satellite Country",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="SUDDENLINK","SuddenLink",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="TIME WARNER ","Time Warner",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="Time warner","Time Warner",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="TWC","Time Warner",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="Uni-Sat","Uni-Sat Communications",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="Uni-Sat Communications","Uni-sat Communications",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="Uni-sat Communications","Uni-Sat Communications",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="Wind Stream","Windstream",calls.may$CableCompany)
+calls.may$CableCompany <- ifelse(calls.may$CableCompany=="XFINITY","Xfinity",calls.may$CableCompany)
+
+
+
+```
+
+The Affiliate field has 89 unique Affiliates. A distribution of calls answered by affiliate and a summary of the field is shown below. Of the 89 affiliates, 40 affiliates have less than 10 calls answered in May. There are 15 affiliates which have more than 500 calls answered.
+```{r Affiliate field}
+
+length(unique(calls.may$Affiliate))
+Affiliate<-calls.may%>%group_by(Affiliate)%>%summarise(CallsAns=n())
+
+#plot of Affiliate 
+ggplot(Affiliate, aes(x=CallsAns)) + geom_histogram()
+
+
+
+```
+
+Disposition fields captures the end of call status whether it was a sale or otherwise. Since we are trying to predict whether a call will result in a sale or not and the associated probabilities, the disposition variable to reduced to a sale/no sale variable. 93% of all calls did not result in a sales while sales close rate is roughly 7%. 
+
+```{r Disposition}
+# create the sale/no sale variable to capture just the sale/non-sale outcome
+calls.may$Sale <- ifelse(grepl("Play -", calls.may$Disposition, ignore.case = T),"Sale","No Sale")
+
+#Determine overall sale ratio
+sales.ratio.overall <- prop.table(table(calls.may$Sale))*100
+sales.ratio.overall
+
+
+
+```
+
+
+
+```{r Overall Conversion Ratio}
+sales.ratio.overall <- prop.table(table(calls.may$Sale))*100
+
+sales.ratio.overall
+
+# drop call start,end time and Outcome since they are not required for the analysis
+calls.may<-calls.may[,-c(2,3,4,7,12)]
+
+#number of variables
+no.of.var <- length(colnames(calls.may))
+no.of.CallDate <- length(unique(calls.may$CallDate))
+no.of.Agents <- length(unique(calls.may$AgentID))
+no.of.TFNs <- length(unique(calls.may$TFN))
+#no.of.BTNs <- length(unique(calls.may$BTN))
+no.of.AreaCodes <- length(unique(calls.may$AreaCode))
+no.of.CallSkill <- length(unique(calls.may$CallSkill))
+no.of.OrigSkill <- length(unique(calls.may$OriginalSkill))
+no.of.CableCompany <- length(unique(calls.may$CableCompany))
+no.of.Affiliate <- length(unique(calls.may$Affiliate))
+
+paste("Total number of variables is:"  , no.of.var)
+paste("Number of days : "  , no.of.CallDate)
+paste("Unique Agents : ", no.of.Agents)
+paste("Unique TFNs : ", no.of.TFNs)
+paste("No of area codes : ", no.of.AreaCodes)
+paste("No of CallSkills : ", no.of.CallSkill)
+paste("No of Original Skills : ", no.of.OrigSkill)
+paste("No of CableCompany : ", no.of.CableCompany)
+paste("No of Affiliates : ", no.of.Affiliate)
+
+# Percent of each level for factor, Pr(x)
+
+## Percent of CallsDate 
+percent.of.CallDate <- calls.may%>%group_by(CallDate)%>%summarise(CallCount=n())%>%
+  mutate(PercentOfTot = round(100*CallCount/sum(CallCount),2))%>%select(CallDate, PercentOfTot)
+percent.of.CallDate
+
+# Percent of AgentId
+percent.of.AgentID <- calls.may%>%group_by(AgentID)%>%summarise(AgentCount=n())%>%
+  mutate(PercentOfTot = round(100*AgentCount/sum(AgentCount),2))%>%select(AgentID, PercentOfTot)
+percent.of.AgentID
+
+# Percent of TFN
+percent.of.TFN <- calls.may%>%group_by(TFN)%>%summarise(TFNCount=n())%>%
+  mutate(PercentOfTot = round(100*TFNCount/sum(TFNCount),2))%>%select(TFN, PercentOfTot)
+percent.of.TFN
+
+# Percent of CallSkill
+percent.of.CallSkill <- calls.may%>%group_by(CallSkill)%>%summarise(SkillCount=n())%>%
+  mutate(PercentOfTot = round(100*SkillCount/sum(SkillCount),2))%>%select(CallSkill, PercentOfTot)
+percent.of.CallSkill
+
+# Percent of OrigSkill
+percent.of.OrigSkill <- calls.may%>%group_by(OriginalSkill)%>%summarise(SkillCount=n())%>%
+  mutate(PercentOfTot = round(100*SkillCount/sum(SkillCount),2))%>%select(OriginalSkill, PercentOfTot)
+percent.of.OrigSkill
+
+# Percent of CableCompany
+percent.of.CableCompany <- calls.may%>%group_by(CableCompany)%>%summarise(CabCompCount=n())%>%
+  mutate(PercentOfTot = round(100*CabCompCount/sum(CabCompCount),2))%>%select(CableCompany, PercentOfTot)
+percent.of.CableCompany
+
+# Percent of Affiliate
+percent.of.Affiliate <- calls.may%>%group_by(Affiliate)%>%summarise(AffiliateCount=n())%>%
+  mutate(PercentOfTot = round(100*AffiliateCount/sum(AffiliateCount),4))%>%select(Affiliate, PercentOfTot)
+percent.of.Affiliate
+
+# Percent of AreaCode
+percent.of.AreaCode <- calls.may%>%group_by(AreaCode)%>%summarise(AreaCodeCount=n())%>%
+  mutate(PercentOfTot = round(100*AreaCodeCount/sum(AreaCodeCount),4))%>%select(AreaCode, PercentOfTot)
+percent.of.AreaCode
+
+# Percent of Sale
+percent.of.Sale <- calls.may%>%group_by(Sale)%>%summarise(SaleCount=n())%>%
+  mutate(PercentOfTot = round(100*SaleCount/sum(SaleCount),2))%>%select(Sale, PercentOfTot)
+percent.of.Sale
+
+```
+Probability of each factor level given conversation rate C
+
+```{r Pr (x | C)}
+## Pr (CallDate | C)
+PrCallDate.Conv<-calls.may%>%group_by(CallDate,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(CallDate,SalesRate)
+PrCallDate.Conv
+
+# Pr (AgentID | C)
+PrAgentID.Conv<-calls.may%>%group_by(AgentID,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(AgentID,SalesRate)
+PrAgentID.Conv
+
+# Pr (TFN | C)
+PrTFN.Conv<-calls.may%>%group_by(TFN,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(TFN,SalesRate)
+PrTFN.Conv
+
+# Pr (CallSkill | C)
+PrCallSkill.Conv<-calls.may%>%group_by(CallSkill,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(CallSkill,SalesRate)
+PrCallSkill.Conv
+
+# Pr (OrigSkill | C)
+PrOrigSkill.Conv <- calls.may%>%group_by(OriginalSkill,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(OriginalSkill,SalesRate)
+PrOrigSkill.Conv
+
+# Pr (CableCompany | C)
+PrCableCompany.Conv <- calls.may%>%group_by(CableCompany,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(CableCompany,SalesRate)
+PrCableCompany.Conv
+
+# Pr (Affiliate | C)
+PrAffiliate.Conv <- calls.may%>%group_by(Affiliate,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(Affiliate,SalesRate)
+PrAffiliate.Conv
+
+# Pr (AreaCode | C)
+PrAreaCode.Conv <- calls.may%>%group_by(AreaCode,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(AreaCode,SalesRate)
+PrAreaCode.Conv
+
+
+
+```
+
