@@ -227,47 +227,48 @@ paste("No of Affiliates : ", no.of.Affiliate)
 
 # Percent of each level for factor, Pr(x)
 
-## Percent of CallsDate 
+paste("Percent of CallsDate, Pr(CallsDate)")
 percent.of.CallDate <- calls.may%>%group_by(CallDate)%>%summarise(CallCount=n())%>%
   mutate(PercentOfTot = round(100*CallCount/sum(CallCount),2))%>%select(CallDate, PercentOfTot)
 percent.of.CallDate
 
-# Percent of AgentId
+paste("Percent of AgentId, Pr(AgentID)")
+
 percent.of.AgentID <- calls.may%>%group_by(AgentID)%>%summarise(AgentCount=n())%>%
   mutate(PercentOfTot = round(100*AgentCount/sum(AgentCount),2))%>%select(AgentID, PercentOfTot)
 percent.of.AgentID
 
-# Percent of TFN
+paste("Percent of TFN, Pr(TFN)")
 percent.of.TFN <- calls.may%>%group_by(TFN)%>%summarise(TFNCount=n())%>%
   mutate(PercentOfTot = round(100*TFNCount/sum(TFNCount),2))%>%select(TFN, PercentOfTot)
 percent.of.TFN
 
-# Percent of CallSkill
+paste("Percent of CallSkill, Pr(CallSkill)")
 percent.of.CallSkill <- calls.may%>%group_by(CallSkill)%>%summarise(SkillCount=n())%>%
   mutate(PercentOfTot = round(100*SkillCount/sum(SkillCount),2))%>%select(CallSkill, PercentOfTot)
 percent.of.CallSkill
 
-# Percent of OrigSkill
+paste("Percent of OrigSkill, Pr(OrigSkill)")
 percent.of.OrigSkill <- calls.may%>%group_by(OriginalSkill)%>%summarise(SkillCount=n())%>%
   mutate(PercentOfTot = round(100*SkillCount/sum(SkillCount),2))%>%select(OriginalSkill, PercentOfTot)
 percent.of.OrigSkill
 
-# Percent of CableCompany
+paste("Percent of CableCompany, Pr(CableCompany)")
 percent.of.CableCompany <- calls.may%>%group_by(CableCompany)%>%summarise(CabCompCount=n())%>%
   mutate(PercentOfTot = round(100*CabCompCount/sum(CabCompCount),2))%>%select(CableCompany, PercentOfTot)
 percent.of.CableCompany
 
-# Percent of Affiliate
+paste("Percent of Affiliate, Pr(Affiliate)")
 percent.of.Affiliate <- calls.may%>%group_by(Affiliate)%>%summarise(AffiliateCount=n())%>%
   mutate(PercentOfTot = round(100*AffiliateCount/sum(AffiliateCount),4))%>%select(Affiliate, PercentOfTot)
 percent.of.Affiliate
 
-# Percent of AreaCode
+paste("Percent of AreaCode, Pr(AreaCode)")
 percent.of.AreaCode <- calls.may%>%group_by(AreaCode)%>%summarise(AreaCodeCount=n())%>%
   mutate(PercentOfTot = round(100*AreaCodeCount/sum(AreaCodeCount),4))%>%select(AreaCode, PercentOfTot)
 percent.of.AreaCode
 
-# Percent of Sale
+paste("Percent of Sale , Pr(C)")
 percent.of.Sale <- calls.may%>%group_by(Sale)%>%summarise(SaleCount=n())%>%
   mutate(PercentOfTot = round(100*SaleCount/sum(SaleCount),2))%>%select(Sale, PercentOfTot)
 percent.of.Sale
@@ -276,35 +277,35 @@ percent.of.Sale
 Probability of each factor level given conversation rate C
 
 ```{r Pr (x | C)}
-## Pr (CallDate | C)
+paste("Pr (CallDate | C)")
 PrCallDate.Conv<-calls.may%>%group_by(CallDate,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(CallDate,SalesRate)
 PrCallDate.Conv
 
-# Pr (AgentID | C)
+paste("Pr (AgentID | C)")
 PrAgentID.Conv<-calls.may%>%group_by(AgentID,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(AgentID,SalesRate)
 PrAgentID.Conv
 
-# Pr (TFN | C)
+paste("Pr (TFN | C)")
 PrTFN.Conv<-calls.may%>%group_by(TFN,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(TFN,SalesRate)
 PrTFN.Conv
 
-# Pr (CallSkill | C)
+paste("Pr (CallSkill | C)")
 PrCallSkill.Conv<-calls.may%>%group_by(CallSkill,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(CallSkill,SalesRate)
 PrCallSkill.Conv
 
-# Pr (OrigSkill | C)
+paste("Pr (OrigSkill | C)")
 PrOrigSkill.Conv <- calls.may%>%group_by(OriginalSkill,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(OriginalSkill,SalesRate)
 PrOrigSkill.Conv
 
-# Pr (CableCompany | C)
+paste("Pr (CableCompany | C)")
 PrCableCompany.Conv <- calls.may%>%group_by(CableCompany,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(CableCompany,SalesRate)
 PrCableCompany.Conv
 
-# Pr (Affiliate | C)
+paste("Pr (Affiliate | C)")
 PrAffiliate.Conv <- calls.may%>%group_by(Affiliate,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(Affiliate,SalesRate)
 PrAffiliate.Conv
 
-# Pr (AreaCode | C)
+paste("Pr (AreaCode | C)")
 PrAreaCode.Conv <- calls.may%>%group_by(AreaCode,Sale)%>%summarise(CallsAns = n())%>%mutate(SalesRate=round(CallsAns/sum(CallsAns)*100,2))%>%filter(Sale=="Sale")%>%select(AreaCode,SalesRate)
 PrAreaCode.Conv
 
@@ -312,3 +313,5 @@ PrAreaCode.Conv
 
 ```
 
+Calculate Bayesian probability for a specific call
+Pr(Sale | ) = 
