@@ -198,7 +198,7 @@ sales.ratio.overall
 ```{r Overall Conversion Ratio}
 sales.ratio.overall <- prop.table(table(calls.may$Sale))*100
 
-sales.ratio.overall
+round(sales.ratio.overall,3)
 
 # drop call start,end time and Outcome since they are not required for the analysis
 calls.may<-calls.may[,-c(2,3,4,7,12)]
@@ -235,27 +235,27 @@ percent.of.CallDate
 paste("Percent of AgentId, Pr(AgentID)")
 
 percent.of.AgentID <- calls.may%>%group_by(AgentID)%>%summarise(AgentCount=n())%>%
-  mutate(PercentOfTot = round(100*AgentCount/sum(AgentCount),2))%>%select(AgentID, PercentOfTot)
+  mutate(PercentOfTot = round(100*AgentCount/sum(AgentCount),4))%>%select(AgentID, PercentOfTot)
 percent.of.AgentID
 
 paste("Percent of TFN, Pr(TFN)")
 percent.of.TFN <- calls.may%>%group_by(TFN)%>%summarise(TFNCount=n())%>%
-  mutate(PercentOfTot = round(100*TFNCount/sum(TFNCount),2))%>%select(TFN, PercentOfTot)
+  mutate(PercentOfTot = round(100*TFNCount/sum(TFNCount),4))%>%select(TFN, PercentOfTot)
 percent.of.TFN
 
 paste("Percent of CallSkill, Pr(CallSkill)")
 percent.of.CallSkill <- calls.may%>%group_by(CallSkill)%>%summarise(SkillCount=n())%>%
-  mutate(PercentOfTot = round(100*SkillCount/sum(SkillCount),2))%>%select(CallSkill, PercentOfTot)
+  mutate(PercentOfTot = round(100*SkillCount/sum(SkillCount),4))%>%select(CallSkill, PercentOfTot)
 percent.of.CallSkill
 
 paste("Percent of OrigSkill, Pr(OrigSkill)")
 percent.of.OrigSkill <- calls.may%>%group_by(OriginalSkill)%>%summarise(SkillCount=n())%>%
-  mutate(PercentOfTot = round(100*SkillCount/sum(SkillCount),2))%>%select(OriginalSkill, PercentOfTot)
+  mutate(PercentOfTot = round(100*SkillCount/sum(SkillCount),4))%>%select(OriginalSkill, PercentOfTot)
 percent.of.OrigSkill
 
 paste("Percent of CableCompany, Pr(CableCompany)")
 percent.of.CableCompany <- calls.may%>%group_by(CableCompany)%>%summarise(CabCompCount=n())%>%
-  mutate(PercentOfTot = round(100*CabCompCount/sum(CabCompCount),2))%>%select(CableCompany, PercentOfTot)
+  mutate(PercentOfTot = round(100*CabCompCount/sum(CabCompCount),4))%>%select(CableCompany, PercentOfTot)
 percent.of.CableCompany
 
 paste("Percent of Affiliate, Pr(Affiliate)")
@@ -314,4 +314,61 @@ PrAreaCode.Conv
 ```
 
 Calculate Bayesian probability for a specific call
-Pr(Sale | ) = 
+
+```{r}
+#Probability of overall conversion Pr(C)
+salerate = percent.of.Sale$PercentOfTot[2]
+
+#Probability of CallDate conversion Pr(Conv | CallDate)
+PrConv.given.CallDate <- merge(percent.of.CallDate,PrCallDate.Conv)
+PrConv.given.CallDate <- PrConv.given.CallDate%>%mutate(PrConvGivenCallDate=PrConv.given.CallDate$SalesRate*salerate/(PercentOfTot))
+
+#Probability of AgentID conversion Pr(Conv | AgentID) = PrAgentID.Conv*salerate/percent.of.AgentID
+PrConv.given.AgentID <- merge(PrAgentID.Conv, percent.of.AgentID)
+PrConv.given.AgentID <- PrConv.given.AgentID%>%mutate(New=SalesRate*salerate/PercentOfTot)
+
+#Probability of TFN conversion Pr(Conv | TFN)
+PrConv.given.TFN <- merge(PrTFN.Conv, percent.of.TFN)
+PrConv.given.TFN <- PrConv.given.TFN%>%mutate(New=SalesRate*salerate/PercentOfTot)
+#gives very high probability for very TFNs with rare calls
+
+#Probability of CallSkill conversion Pr(Conv | CallSkill)
+PrConv.given.CallSkill <- merge(PrCallSkill.Conv, percent.of.CallSkill)
+PrConv.given.CallSkill <- PrConv.given.CallSkill%>%mutate(New=SalesRate*salerate/PercentOfTot)
+
+#Probability of OriginalSkill conversion Pr(Conv | OriginalSkill)
+PrConv.given.OrigSkill <- merge(PrOrigSkill.Conv, percent.of.OrigSkill)
+PrConv.given.OrigSkill <- PrConv.given.OrigSkill%>%mutate(New=SalesRate*salerate/PercentOfTot)
+
+#Probability of CableCompany conversion Pr(Conv | CableCompany)
+PrConv.given.CableCompany <- merge(PrCableCompany.Conv, percent.of.CableCompany)
+PrConv.given.CableCompany <- PrConv.given.CableCompany%>%mutate(New=SalesRate*salerate/PercentOfTot)
+
+#Probability of Affiliate conversion Pr(Conv | Affiliate)
+PrConv.given.Affiliate <- merge(PrAffiliate.Conv, percent.of.Affiliate)
+PrConv.given.Affiliate <- PrConv.given.Affiliate%>%mutate(New=SalesRate*salerate/PercentOfTot)
+
+#Probability of AreaCode conversion Pr(Conv | AreaCode)
+PrConv.given.AreaCode <- merge(PrAreaCode.Conv, percent.of.AreaCode)
+PrConv.given.AreaCode <- PrConv.given.AreaCode%>%mutate(New=SalesRate*salerate/PercentOfTot)
+
+
+```
+
+Function to predict probability of sale in real time 
+
+```{r}
+
+#sample
+n<-sample(nrow(calls.may),100)
+calls.maysample <- calls.may[n,]
+
+# convert sale-nosale to binary
+calls.maysample$Sale<- ifelse(calls.maysample$Sale=="Sale",1,0)
+
+#run anova
+#anova.calls.maysample<- #anova(lm(Sale~CallDate*AgentID*TFN*CallSkill*OriginalSkill*CableCompany*Affiliate*Area#Code,calls.maysample))
+
+
+```
+
